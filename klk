@@ -1,0 +1,274 @@
+#!/usr/bin/env python3
+
+from optparse import OptionParser
+import sys, os
+import json
+import time
+import datetime
+from termcolor import colored
+
+# GET OPTIONS
+parser = OptionParser()
+parser.add_option("-p", "--project", action="store", type="string", dest="project", help="project name")
+parser.add_option("-t", "--dates", action="store", type="string", dest="dates", help="dates to expand in report")
+
+parser.add_option("-e", "--edit", action="store", type="string", dest="edit", help="stamp edit command c:[s]:[e] d:[i] s:[i]:[s] e:[i]:[e]")
+
+parser.add_option("-d", "--delete", action="store_true", dest="delete", help="delete project")
+parser.add_option("-c", "--create", action="store_true", dest="create", help="create new project")
+parser.add_option("-l", "--list", action="store_true", dest="list", help="list projects")
+parser.add_option("-r", "--report", action="store_true", dest="report", help="report project")
+parser.add_option("-$", "--rate", action="store", dest="rate", type="float", help="rate for project")
+parser.add_option("-v", "--verbose", action="store_true", dest="verbose", help="verbose report")
+
+parser.add_option("-i", "--in", action="store_true", dest="punch_in", help="punch in")
+parser.add_option("-o", "--out", action="store_true", dest="punch_out", help="punch out")
+
+options, args = parser.parse_args()
+assert(len(args) <= 1)
+if len(args) == 1 and options.project is None:
+    options.project = args[0] 
+
+# GET CONFIG
+homedir = os.path.expanduser('~')
+with open(homedir + "/.klk.rc", "a+") as f:
+    f.seek(0)
+    try:
+        config = json.loads(f.read())
+    except: # NOT VALID JSON
+        f.seek(0)
+        f.write("{}")
+        f.seek(0)
+        config = json.loads(f.read())
+
+# APPLY DEFAULTS
+if 'klk_path' not in config or not config['klk_path']:
+    config['klk_path'] = homedir + "/.klk"
+
+# GET DATA
+with open(config["klk_path"], "a+") as f:
+    f.seek(0)
+    try:
+        data = json.loads(f.read())
+    except: # NOT VALID JSON
+        f.seek(0)
+        f.write('{"projects":{}}')
+        f.seek(0)
+        data = json.loads(f.read())
+
+# HELPERS
+def clocked_in(prj):
+    if prj["stamps"]:
+        if "end" not in prj["stamps"][-1]:
+            return True
+    return False
+
+def get_today():
+    return datetime.datetime.fromtimestamp(time.time()).date()
+
+def get_date(ts):
+    return datetime.datetime.fromtimestamp(ts).date()
+
+def get_by_day(prj):
+    days = {}
+    for i, s in enumerate(prj["stamps"]):
+        s["i"] = i
+        date = get_date(s["start"])
+        if date in days:
+            days[date].append(s)
+        else:
+            days[date] = [s]
+    return days
+
+def get_total(stamps):
+    t = 0
+    for s in stamps:
+        if "end" not in s:
+            t += time.time() - s["start"]
+        else:
+            t += s["end"] - s["start"]
+
+    return t
+
+def current_start(prj):
+    if clocked_in(prj):
+        return prj["stamps"][-1]["start"]
+    else:
+        return 0
+
+
+# OPERATIONS
+def list_projects(data):
+    print(" ".join(data['projects'].keys()))
+
+def create_project(data, project):
+    if project in data['projects']:
+        print("Project already exists")
+        return
+    data['projects'][project] = {"stamps": [], "rate": None}
+
+def delete_project(data, project):
+    if project in data['projects']:
+        del data['projects'][project]
+        return
+    print("Project does not exist to delete")
+    return
+
+def print_proj_heading(data, project, verbose=False):
+    title_str = "::: %s " % project
+    prj = data["projects"][project]
+    if prj["rate"] is not None:
+        title_str += colored("$%d/hr" % prj["rate"], "red") + " "
+    title_str += ":::"
+    print(title_str)
+
+    if clocked_in(prj):
+        start = current_start(prj)
+        print("IN SINCE: " + colored(datetime.datetime.fromtimestamp(start).ctime(), "green"))
+
+def print_stamp_set(stamps):
+    for s in stamps:
+        start = s["start"]
+        if "end" in s:
+            end = s["end"]
+        else:
+            end = time.time()
+        start_str = datetime.datetime.fromtimestamp(start).ctime()
+        end_str = datetime.datetime.fromtimestamp(end).ctime()
+        duration = datetime.timedelta(seconds=int(end - start))
+        print("   %d: %s - %s ::" % (s["i"], start_str, end_str) + colored(" (%s)" % duration, "green"))
+
+def report_project(data, project, verbose=False, dates=None):
+    if project not in data['projects']:
+        print("Project does not exist to report")
+        return
+
+    prj = data['projects'][project]
+
+    print_proj_heading(data, project, verbose)
+    
+
+
+    today = get_today()
+    today_stamps = filter(lambda s: get_date(s["start"]) == today, prj["stamps"])
+    total_today = get_total(today_stamps)
+
+    today_str = colored("%.1fh " % (total_today / 3600), "green") + "today"
+    total_str = colored("%.1fh " % (get_total(prj["stamps"]) / 3600), "green") + "total"
+    if prj["rate"] is not None:
+        
+        dollars_today = total_today / 3600.0 * prj["rate"]
+        today_str += colored(" (${0:,.2f})".format(dollars_today), "red")
+
+        dollars_total = get_total(prj["stamps"]) / 3600.0 * prj["rate"]
+        total_str += colored(" (${0:,.2f})".format(dollars_total), "red")
+
+    print(today_str)
+    print(total_str)
+
+    if verbose:
+        print("")
+        days = get_by_day(prj)
+        for d in sorted(days):
+            print("%s : " % d + colored("%.1fh" % (get_total(days[d]) / 3600), "green"))
+            print_stamp_set(days[d])
+    elif dates:
+        print("")
+        days = get_by_day(prj)
+        for d in sorted(days):
+            print("%s : " % d + colored("%.1fh" % (get_total(days[d]) / 3600), "green"))
+            if d in dates:
+                print_stamp_set(days[d])
+
+def in_project(data, project):
+    if project not in data['projects']:
+        print("Project does not exist to punch in")
+        return
+    if clocked_in(data['projects'][project]):
+        print("Already stamped in")
+        return
+    data["projects"][project]["stamps"].append({"start": time.time()})
+
+def out_project(data, project):
+    if project not in data['projects']:
+        print("Project does not exist to punch out")
+        return
+
+    if not clocked_in(data['projects'][project]):
+        print("Not stamped in")
+        return
+    data['projects'][project]["stamps"][-1]["end"] = time.time()
+
+def edit_stamp(data, project, edit):
+    if project not in data['projects']:
+        print("Project does not exist to edit")
+        return
+
+    prj = data['projects'][project]
+    stamps = prj["stamps"]
+
+    edits = edit.split(",")
+
+    for e in edits:
+        op = e.split(":")[0]
+
+        if op == "s":  # Change Start
+            i = int(e.split(":")[1])
+            v = float(e.split(":")[2])
+
+            stamps[i]["start"] = float(v)
+
+        elif op == "e":  # Change End
+            i = int(e.split(":")[1])
+            v = float(e.split(":")[2])
+
+            stamps[i]["end"] = float(v)
+
+        elif op == "d":  # Delete Stamp
+            i = int(e.split(":")[1])
+            del stamps[i]
+
+        elif op == "c":  # Create Stamp
+            s = float(e.split(":")[1])
+            e = float(e.split(":")[2])
+            stamps.append({"start": s, "end": e})
+
+if options.list:
+    list_projects(data)
+
+if options.create:
+    create_project(data, options.project)
+
+if options.rate is not None:
+    data["projects"][options.project]["rate"] = options.rate
+
+if options.delete:
+    delete_project(data, options.project)
+
+if options.punch_in:
+    in_project(data, options.project)
+
+if options.punch_out:
+    out_project(data, options.project)
+
+if options.edit:
+    edit_stamp(data, options.project, options.edit)
+
+if options.report:
+    if options.dates:
+        def parse_date(d):
+            if d == "t":
+                return get_today() 
+            else:
+                return datetime.datetime.strptime(d, '%Y-%m-%d').date()
+        dates = list(map(parse_date, options.dates.split(",")))
+    else:
+        dates = []
+    if options.project is None:
+        for project in data['projects']:
+            report_project(data, project, options.verbose, dates)
+    else:
+        report_project(data, options.project, options.verbose, dates)
+
+with open(config["klk_path"], "w") as f:
+    f.write(json.dumps(data))
