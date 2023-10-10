@@ -35,4 +35,7 @@ Options:
   -v, --verbose         verbose report
   -i, --in              punch in
   -o, --out             punch out
+  -b INVOICE, --invoice=INVOICE
+                        invoice project in hours
+  -q PAYMENT, --payment=PAYMENT  mark project paid in dollars
   ```

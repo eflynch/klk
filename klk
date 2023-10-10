@@ -28,7 +28,7 @@ def main():
     parser.add_option("-o", "--out", action="store_true", dest="punch_out", help="punch out")
 
     parser.add_option("-b", "--invoice", action="store", type="float", dest="invoice", help="invoice project in hours")
-    parser.add_option("-q", "--paid", action="store", type="float", dest="paid", help="mark project paid in dollars")
+    parser.add_option("-q", "--payment", action="store", type="float", dest="payment", help="mark project paid in dollars")
 
     options, args = parser.parse_args()
     assert(len(args) <= 1)
@@ -348,8 +348,8 @@ def main():
     if options.invoice:
         invoice(data, options.project, options.invoice)
     
-    if options.paid:
-        mark_payment(data, options.project, options.paid)
+    if options.payment:
+        mark_payment(data, options.project, options.payment)
 
     with open(config["klk_path"], "w") as f:
         f.write(json.dumps(data))
