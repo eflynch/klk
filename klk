@@ -24,6 +24,8 @@ parser.add_option("-v", "--verbose", action="store_true", dest="verbose", help="
 parser.add_option("-i", "--in", action="store_true", dest="punch_in", help="punch in")
 parser.add_option("-o", "--out", action="store_true", dest="punch_out", help="punch out")
 
+ConfigRoot = ".config/klk"
+
 options, args = parser.parse_args()
 assert(len(args) <= 1)
 if len(args) == 1 and options.project is None:
@@ -31,7 +33,7 @@ if len(args) == 1 and options.project is None:
 
 # GET CONFIG
 homedir = os.path.expanduser('~')
-with open(homedir + "/.klk.rc", "a+") as f:
+with open(os.path.join(homedir, ConfigRoot, "klk.rc"), "a+") as f:
     f.seek(0)
     try:
         config = json.loads(f.read())
@@ -43,7 +45,7 @@ with open(homedir + "/.klk.rc", "a+") as f:
 
 # APPLY DEFAULTS
 if 'klk_path' not in config or not config['klk_path']:
-    config['klk_path'] = homedir + "/.klk"
+    config['klk_path'] = os.path.join(homedir, ConfigRoot, "klk_file")
 
 # GET DATA
 with open(config["klk_path"], "a+") as f:
