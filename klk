@@ -201,6 +201,8 @@ def main():
         
         if verbose:
             print("")
+            print("stamps:")
+            print("")
             days = get_by_day(prj)
             for d in sorted(days):
                 print("%s : " % d + colored("%.1fh" % (get_total(days[d]) / 3600), "green"))
