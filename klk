@@ -29,6 +29,9 @@ def main():
 
     parser.add_option("-b", "--invoice", action="store", type="float", dest="invoice", help="invoice project in hours")
     parser.add_option("-q", "--payment", action="store", type="float", dest="payment", help="mark project paid in dollars")
+    parser.add_option("-m", "--task", action="store", type="string", dest="task", help="task description")
+    parser.add_option("-x", "--export", action="store", type="string", dest="export", help="export project to csv")
+    parser.add_option("-u", "--user", action="store", type="string", dest="user", help="save user namae")
 
     options, args = parser.parse_args()
     assert(len(args) <= 1)
@@ -156,6 +159,8 @@ def main():
             end_str = datetime.datetime.fromtimestamp(end).ctime()
             duration = datetime.timedelta(seconds=int(end - start))
             print("   %d: %s - %s ::" % (s["i"], start_str, end_str) + colored(" (%s)" % duration, "green"))
+            if "task" in s:
+                print("       " + s["task"])
 
     def report_project(data, project, verbose=False, dates=None):
         if project not in data['projects']:
@@ -237,14 +242,15 @@ def main():
                 if d in dates:
                     print_stamp_set(days[d])
 
-    def in_project(data, project):
+    def in_project(data, project, task=None):
         if project not in data['projects']:
             print("Project does not exist to punch in")
             return
         if clocked_in(data['projects'][project]):
             print("Already stamped in")
             return
-        data["projects"][project]["stamps"].append({"start": time.time()})
+        clonk = {"start": time.time(), "task": task}
+        data["projects"][project]["stamps"].append(clonk)
 
     def out_project(data, project):
         if project not in data['projects']:
@@ -309,6 +315,21 @@ def main():
             "date": time.time(),
             "amount": amount
         })
+    
+    def export(data, project, dest):
+        user = data["user"] if "user" in data else "unknown"
+        with open(dest, "w") as f:
+            log = lambda s: f.write(s + "\n")
+            log("project,user,task,startdate,enddate,duration")
+            prj = data["projects"][project]
+            for s in sorted(prj["stamps"], key=lambda s: s["start"]):
+                if "end" not in s:
+                    continue
+                start = datetime.datetime.fromtimestamp(s["start"]).strftime("%Y/%m/%d %H:%M:%S")
+                end = datetime.datetime.fromtimestamp(s["end"]).strftime("%Y/%m/%d %H:%M:%S")
+                task = s["task"] if "task" in s else ""
+                duration = datetime.timedelta(seconds=int(s["end"] - s["start"]))
+                log(f'"{project}","{user}","{task}","{start}","{end}",{round(duration.total_seconds()/3600, 2)}')
 
     if options.list:
         list_projects(data)
@@ -323,13 +344,13 @@ def main():
         delete_project(data, options.project)
 
     if options.punch_in:
-        in_project(data, options.project)
+        in_project(data, options.project, options.task)
 
     if options.punch_out:
         out_project(data, options.project)
 
     if options.edit:
-        edit_stamp(data, options.project, options.edit)
+        edit_stamp(data, options.project)
 
     if options.report:
         if options.dates:
@@ -352,6 +373,12 @@ def main():
     
     if options.payment:
         mark_payment(data, options.project, options.payment)
+
+    if options.export:
+        export(data, options.project, options.export)
+    
+    if options.user:
+        data["user"] = options.user
 
     with open(config["klk_path"], "w") as f:
         f.write(json.dumps(data))
